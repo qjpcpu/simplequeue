@@ -58,7 +58,6 @@ func main() {
 	session.SendString(name, "plain text", uint64(time.Now().Unix()))
 	session.Close()
 
-	fmt.Println("f")
 	for {
 		select {
 		case d := <-dataCh:
