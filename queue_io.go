@@ -2,10 +2,12 @@ package qio
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/garyburd/redigo/redis"
 )
 
 var (
+	ErrEmpty  = errors.New("qio: empty")
 	popScript = redis.NewScript(1, `
 local vals=redis.call("ZRANGEBYSCORE", KEYS[1],0,ARGV[1],"LIMIT",0,1)
 if table.getn(vals) > 0 then
@@ -17,7 +19,11 @@ return nil
 )
 
 func Pop(conn redis.Conn, topic string, score uint64) (interface{}, error) {
-	return popScript.Do(conn, topic, score)
+	obj, err := popScript.Do(conn, topic, score)
+	if err == redis.ErrNil {
+		err = ErrEmpty
+	}
+	return obj, err
 }
 
 func Add(conn redis.Conn, topic string, payload interface{}, score uint64) error {
