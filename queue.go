@@ -1,8 +1,14 @@
 package qio
 
 import (
+	"fmt"
 	"github.com/garyburd/redigo/redis"
 	"time"
+)
+
+const (
+	clockPrefix = "t:"
+	normPrefix  = ":"
 )
 
 type QueueIO struct {
@@ -68,46 +74,80 @@ func (s *QueueSession) Close() {
 	s.Conn.Close()
 }
 
-func (s *QueueSession) PopString(topic string, score uint64) (string, error) {
-	return PopString(s.Conn, topic, score)
+func (s *QueueSession) PopClockString(topic string, score uint64) (string, error) {
+	return PopClockString(s.Conn, clockPrefix+topic, score)
 }
 
-func (s *QueueSession) PopJSON(topic string, score uint64, res interface{}) error {
-	return PopJSON(s.Conn, topic, score, res)
+func (s *QueueSession) SendClockString(topic string, payload string, getter QueueScoreGetter) error {
+	return AddClockString(s.Conn, clockPrefix+topic, payload, getter.ToScore())
 }
 
-func (s *QueueSession) SendString(topic string, payload string, score uint64) error {
-	return AddString(s.Conn, topic, payload, score)
+func (s *QueueSession) SendClockJSON(topic string, payload interface{}, getter QueueScoreGetter) error {
+	return AddClockJSON(s.Conn, clockPrefix+topic, payload, getter.ToScore())
 }
 
-func (s *QueueSession) SendJSON(topic string, payload interface{}, score uint64) error {
-	return AddJSON(s.Conn, topic, payload, score)
+func (s *QueueSession) PopString(topic string) (string, error) {
+	return PopString(s.Conn, normPrefix+topic)
+}
+
+func (s *QueueSession) SendString(topic string, payload string) error {
+	return AddString(s.Conn, normPrefix+topic, payload)
+}
+
+func (s *QueueSession) SendJSON(topic string, payload interface{}) error {
+	return AddJSON(s.Conn, normPrefix+topic, payload)
 }
 
 func (m *Mux) CloseRead() {
 	m.done <- struct{}{}
 }
 
-func (q QueueIO) StartRead(topic string, getter QueueScoreGetter, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Mux {
+func (q QueueIO) ReadClockMsg(topic string, getter QueueScoreGetter, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Mux {
+	onceFunc := func() (string, error) {
+		if r := recover(); r != nil {
+			if errCh != nil {
+				errCh <- fmt.Errorf("panic occur when read msg:%v", r)
+			}
+		}
+		score, err := getter.CurrentScore()
+		if err != nil {
+			return "", err
+		}
+		session := q.GetSession()
+		defer session.Close()
+		return session.PopClockString(topic, score)
+	}
+	q.markTopicReadable(clockPrefix + topic)
+	return q.readMsgLoop(onceFunc, dataCh, errCh, readIntervals...)
+}
+
+func (q QueueIO) ReadMsg(topic string, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Mux {
+	onceFunc := func() (string, error) {
+		session := q.GetSession()
+		str, err := session.PopString(topic)
+		session.Close()
+		return str, err
+	}
+	q.markTopicReadable(normPrefix + topic)
+	return q.readMsgLoop(onceFunc, dataCh, errCh, readIntervals...)
+}
+
+func (q QueueIO) markTopicReadable(topic string) {
 	if _, ok := q.topics[topic]; ok {
 		panic("duplicate read " + topic)
 	}
 	q.topics[topic] = struct{}{}
+}
+
+func (q QueueIO) readMsgLoop(onceFunc func() (string, error), dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Mux {
+	if onceFunc == nil {
+		panic("null read func")
+	}
 	if dataCh == nil {
 		panic("dataCh should not be nil")
 	}
 	done := make(chan struct{}, 1)
 	loop := func() {
-		onceFunc := func() (string, error) {
-			score, err := getter.CurrentScore()
-			if err != nil {
-				return "", err
-			}
-			session := q.GetSession()
-			str, err := session.PopString(topic, score)
-			session.Close()
-			return str, err
-		}
 		// loop interval duration
 		defaultInterval := 1 * time.Second
 		if len(readIntervals) > 0 {

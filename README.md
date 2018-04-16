@@ -2,7 +2,7 @@ simple queue based on redis
 =============================
 
 
-## unorder queue
+## order queue
 
 ```
 package main
@@ -17,11 +17,11 @@ func main() {
 	dataCh := make(chan string)
 	errCh := make(chan error)
 	name := "testq"
-	mux := q.StartRead(name, qio.ZeroScoreGetter{}, dataCh, errCh)
+	mux := q.ReadMsg(name, dataCh, errCh)
 	defer mux.CloseRead()
 	session := q.GetSession()
-	session.SendString(name, "plain text", 0)
-	session.SendJSON(name, map[string]string{"a": "b", "c": "d"}, 0)
+	session.SendString(name, "plain text")
+	session.SendJSON(name, map[string]string{"a": "b", "c": "d"})
 	session.Close()
 
 	for {
@@ -51,11 +51,11 @@ func main() {
 	dataCh := make(chan string)
 	errCh := make(chan error)
 	name := "testq"
-	mux := q.StartRead(name, qio.TimeScoreGetter{}, dataCh, errCh)
+	mux := q.ReadClockMsg(name, qio.TimeScoreGetter{}, dataCh, errCh)
 	defer mux.CloseRead()
 	session := q.GetSession()
-	session.SendJSON(name, map[string]string{"a": "b", "c": "d"}, uint64(time.Now().Add(5*time.Second).Unix()))
-	session.SendString(name, "plain text", uint64(time.Now().Unix()))
+	session.SendClockJSON(name, map[string]string{"a": "b", "c": "d"}, qio.NewTimeScoreGetter(time.Now()))
+	session.SendClockString(name, "plain text", qio.NewTimeScoreGetter(time.Now().Add(5*time.Second)))
 	session.Close()
 
 	for {
