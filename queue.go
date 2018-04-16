@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	clockPrefix = "t:"
-	normPrefix  = ":"
+	clockSuffix = "c"
+	normSuffix  = "n"
 )
 
 type QueueIO struct {
@@ -75,27 +75,27 @@ func (s *QueueSession) Close() {
 }
 
 func (s *QueueSession) PopClockString(topic string, score uint64) (string, error) {
-	return PopClockString(s.Conn, clockPrefix+topic, score)
+	return PopClockString(s.Conn, queueKey(clockSuffix, topic), score)
 }
 
 func (s *QueueSession) SendClockString(topic string, payload string, getter QueueScoreGetter) error {
-	return AddClockString(s.Conn, clockPrefix+topic, payload, getter.ToScore())
+	return AddClockString(s.Conn, queueKey(clockSuffix, topic), payload, getter.ToScore())
 }
 
 func (s *QueueSession) SendClockJSON(topic string, payload interface{}, getter QueueScoreGetter) error {
-	return AddClockJSON(s.Conn, clockPrefix+topic, payload, getter.ToScore())
+	return AddClockJSON(s.Conn, queueKey(clockSuffix, topic), payload, getter.ToScore())
 }
 
 func (s *QueueSession) PopString(topic string) (string, error) {
-	return PopString(s.Conn, normPrefix+topic)
+	return PopString(s.Conn, queueKey(normSuffix, topic))
 }
 
 func (s *QueueSession) SendString(topic string, payload string) error {
-	return AddString(s.Conn, normPrefix+topic, payload)
+	return AddString(s.Conn, queueKey(normSuffix, topic), payload)
 }
 
 func (s *QueueSession) SendJSON(topic string, payload interface{}) error {
-	return AddJSON(s.Conn, normPrefix+topic, payload)
+	return AddJSON(s.Conn, queueKey(normSuffix, topic), payload)
 }
 
 func (m *Mux) CloseRead() {
@@ -117,7 +117,7 @@ func (q QueueIO) ReadClockMsg(topic string, getter QueueScoreGetter, dataCh chan
 		defer session.Close()
 		return session.PopClockString(topic, score)
 	}
-	q.markTopicReadable(clockPrefix + topic)
+	q.markTopicReadable(queueKey(clockSuffix, topic))
 	return q.readMsgLoop(onceFunc, dataCh, errCh, readIntervals...)
 }
 
@@ -128,7 +128,7 @@ func (q QueueIO) ReadMsg(topic string, dataCh chan<- string, errCh chan<- error,
 		session.Close()
 		return str, err
 	}
-	q.markTopicReadable(normPrefix + topic)
+	q.markTopicReadable(queueKey(normSuffix, topic))
 	return q.readMsgLoop(onceFunc, dataCh, errCh, readIntervals...)
 }
 
@@ -176,4 +176,8 @@ func (q QueueIO) readMsgLoop(onceFunc func() (string, error), dataCh chan<- stri
 	}
 	go loop()
 	return &Mux{done: done}
+}
+
+func queueKey(namespace, topic string) string {
+	return fmt.Sprintf("%s:%s", topic, namespace)
 }
