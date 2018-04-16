@@ -11,16 +11,16 @@ type QueueScoreGetter interface {
 	ToScore() uint64
 }
 
-type TimeScoreGetter time.Time
+type TimeScore time.Time
 
-func NewTimeScoreGetter(tm time.Time) TimeScoreGetter {
-	return TimeScoreGetter(tm)
+func NewTimeScore(tm time.Time) TimeScore {
+	return TimeScore(tm)
 }
 
-func (t TimeScoreGetter) CurrentScore() (uint64, error) {
+func (t TimeScore) CurrentScore() (uint64, error) {
 	return uint64(time.Now().Unix()), nil
 }
 
-func (t TimeScoreGetter) ToScore() uint64 {
+func (t TimeScore) ToScore() uint64 {
 	return uint64(time.Time(t).Unix())
 }

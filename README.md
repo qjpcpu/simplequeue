@@ -51,11 +51,11 @@ func main() {
 	dataCh := make(chan string)
 	errCh := make(chan error)
 	name := "testq"
-	mux := q.ReadClockMsg(name, qio.TimeScoreGetter{}, dataCh, errCh)
+	mux := q.ReadClockMsg(name, qio.TimeScore{}, dataCh, errCh)
 	defer mux.CloseRead()
 	session := q.GetSession()
-	session.SendClockJSON(name, map[string]string{"a": "b", "c": "d"}, qio.NewTimeScoreGetter(time.Now()))
-	session.SendClockString(name, "plain text", qio.NewTimeScoreGetter(time.Now().Add(5*time.Second)))
+	session.SendClockJSON(name, map[string]string{"a": "b", "c": "d"}, qio.NewTimeScore(time.Now()))
+	session.SendClockString(name, "plain text", qio.NewTimeScore(time.Now().Add(5*time.Second)))
 	session.Close()
 
 	for {
