@@ -3,6 +3,7 @@ package qio
 import (
 	"fmt"
 	"github.com/garyburd/redigo/redis"
+	"sync"
 	"time"
 )
 
@@ -22,6 +23,7 @@ type QueueSession struct {
 
 type Mux struct {
 	done chan struct{}
+	wg   *sync.WaitGroup
 }
 
 func NewQueueIOByPool(pool *redis.Pool) QueueIO {
@@ -74,18 +76,24 @@ func (s *QueueSession) Close() {
 	s.Conn.Close()
 }
 
-func (s *QueueSession) PopClockString(topic string, score uint64) (string, error) {
-	return PopClockString(s.Conn, queueKey(ns_clock, topic), score)
+// clock
+func (s *QueueSession) PopDelayString(topic string, getter QueueScoreGetter) (string, error) {
+	score, err := getter.CurrentScore()
+	if err != nil {
+		return "", err
+	}
+	return PopDelayString(s.Conn, queueKey(ns_clock, topic), score)
 }
 
-func (s *QueueSession) SendClockString(topic string, payload string, getter QueueScoreGetter) error {
-	return AddClockString(s.Conn, queueKey(ns_clock, topic), payload, getter.ToScore())
+func (s *QueueSession) SendDelayString(topic string, payload string, getter QueueScoreGetter) error {
+	return AddDelayString(s.Conn, queueKey(ns_clock, topic), payload, getter.ToScore())
 }
 
-func (s *QueueSession) SendClockJSON(topic string, payload interface{}, getter QueueScoreGetter) error {
-	return AddClockJSON(s.Conn, queueKey(ns_clock, topic), payload, getter.ToScore())
+func (s *QueueSession) SendDelayJSON(topic string, payload interface{}, getter QueueScoreGetter) error {
+	return AddDelayJSON(s.Conn, queueKey(ns_clock, topic), payload, getter.ToScore())
 }
 
+// normal
 func (s *QueueSession) PopString(topic string) (string, error) {
 	return PopString(s.Conn, queueKey(ns_norm, topic))
 }
@@ -100,22 +108,19 @@ func (s *QueueSession) SendJSON(topic string, payload interface{}) error {
 
 func (m *Mux) CloseRead() {
 	m.done <- struct{}{}
+	m.wg.Wait()
 }
 
-func (q QueueIO) ReadClockMsg(topic string, getter QueueScoreGetter, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Mux {
+func (q QueueIO) ReadDelayMsg(topic string, getter QueueScoreGetter, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Mux {
 	onceFunc := func() (string, error) {
 		if r := recover(); r != nil {
 			if errCh != nil {
 				errCh <- fmt.Errorf("panic occur when read msg:%v", r)
 			}
 		}
-		score, err := getter.CurrentScore()
-		if err != nil {
-			return "", err
-		}
 		session := q.GetSession()
 		defer session.Close()
-		return session.PopClockString(topic, score)
+		return session.PopDelayString(topic, getter)
 	}
 	q.markTopicReadable(queueKey(ns_clock, topic))
 	return q.readMsgLoop(onceFunc, dataCh, errCh, readIntervals...)
@@ -146,7 +151,8 @@ func (q QueueIO) readMsgLoop(onceFunc func() (string, error), dataCh chan<- stri
 	if dataCh == nil {
 		panic("dataCh should not be nil")
 	}
-	done := make(chan struct{}, 1)
+	mux := &Mux{done: make(chan struct{}, 1), wg: new(sync.WaitGroup)}
+	mux.wg.Add(1)
 	loop := func() {
 		// loop interval duration
 		defaultInterval := 1 * time.Second
@@ -168,14 +174,15 @@ func (q QueueIO) readMsgLoop(onceFunc func() (string, error), dataCh chan<- stri
 			}
 			select {
 			case <-time.After(period):
-			case <-done:
-				close(done)
+			case <-mux.done:
+				close(mux.done)
+				mux.wg.Done()
 				return
 			}
 		}
 	}
 	go loop()
-	return &Mux{done: done}
+	return mux
 }
 
 func queueKey(namespace, topic string) string {

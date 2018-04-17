@@ -17,37 +17,37 @@ return nil
 )
 
 // clock API
-func PopClock(conn redis.Conn, topic string, score uint64) (interface{}, error) {
+func PopDelay(conn redis.Conn, topic string, score uint64) (interface{}, error) {
 	return popScript.Do(conn, topic, score)
 }
 
-func AddClock(conn redis.Conn, topic string, payload interface{}, score uint64) error {
+func AddDelay(conn redis.Conn, topic string, payload interface{}, score uint64) error {
 	_, err := conn.Do("ZADD", topic, score, payload)
 	return err
 }
 
-func PopClockString(conn redis.Conn, topic string, score uint64) (string, error) {
-	return redis.String(PopClock(conn, topic, score))
+func PopDelayString(conn redis.Conn, topic string, score uint64) (string, error) {
+	return redis.String(PopDelay(conn, topic, score))
 }
 
-func AddClockString(conn redis.Conn, topic string, payload string, score uint64) error {
-	return AddClock(conn, topic, payload, score)
+func AddDelayString(conn redis.Conn, topic string, payload string, score uint64) error {
+	return AddDelay(conn, topic, payload, score)
 }
 
-func PopClockJSON(conn redis.Conn, topic string, score uint64, obj interface{}) error {
-	data, err := redis.Bytes(PopClock(conn, topic, score))
+func PopDelayJSON(conn redis.Conn, topic string, score uint64, obj interface{}) error {
+	data, err := redis.Bytes(PopDelay(conn, topic, score))
 	if err != nil {
 		return err
 	}
 	return json.Unmarshal(data, obj)
 }
 
-func AddClockJSON(conn redis.Conn, topic string, obj interface{}, score uint64) error {
+func AddDelayJSON(conn redis.Conn, topic string, obj interface{}, score uint64) error {
 	data, err := json.Marshal(obj)
 	if err != nil {
 		return err
 	}
-	return AddClock(conn, topic, data, score)
+	return AddDelay(conn, topic, data, score)
 }
 
 // normal API
