@@ -18,7 +18,7 @@ func main() {
 	errCh := make(chan error)
 	name := "testq"
 	mux := q.ReadMsg(name, dataCh, errCh)
-	defer mux.CloseRead()
+	defer mux.Close()
 	session := q.GetSession()
 	session.SendString(name, "plain text")
 	session.SendJSON(name, map[string]string{"a": "b", "c": "d"})
@@ -52,7 +52,7 @@ func main() {
 	errCh := make(chan error)
 	name := "testq"
 	mux := q.ReadClockMsg(name, qio.TimeScore{}, dataCh, errCh)
-	defer mux.CloseRead()
+	defer mux.Close()
 	session := q.GetSession()
 	session.SendClockJSON(name, map[string]string{"a": "b", "c": "d"}, qio.NewTimeScore(time.Now()))
 	session.SendClockString(name, "plain text", qio.NewTimeScore(time.Now().Add(5*time.Second)))

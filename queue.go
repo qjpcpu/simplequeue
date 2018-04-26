@@ -3,7 +3,7 @@ package qio
 import (
 	"fmt"
 	"github.com/garyburd/redigo/redis"
-	"sync"
+	"github.com/qjpcpu/common/redo"
 	"time"
 )
 
@@ -21,9 +21,13 @@ type QueueSession struct {
 	Conn redis.Conn
 }
 
-type Mux struct {
-	done chan struct{}
-	wg   *sync.WaitGroup
+type Recipet struct {
+	rep *redo.Recipet
+}
+
+func (r *Recipet) Close() {
+	r.rep.Stop()
+	r.rep.Wait()
 }
 
 func NewQueueIOByPool(pool *redis.Pool) QueueIO {
@@ -106,12 +110,7 @@ func (s *QueueSession) SendJSON(topic string, payload interface{}) error {
 	return AddJSON(s.Conn, queueKey(ns_norm, topic), payload)
 }
 
-func (m *Mux) CloseRead() {
-	m.done <- struct{}{}
-	m.wg.Wait()
-}
-
-func (q QueueIO) ReadDelayMsg(topic string, getter QueueScoreGetter, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Mux {
+func (q QueueIO) ReadDelayMsg(topic string, getter QueueScoreGetter, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Recipet {
 	onceFunc := func() (string, error) {
 		if r := recover(); r != nil {
 			if errCh != nil {
@@ -126,7 +125,7 @@ func (q QueueIO) ReadDelayMsg(topic string, getter QueueScoreGetter, dataCh chan
 	return q.readMsgLoop(onceFunc, dataCh, errCh, readIntervals...)
 }
 
-func (q QueueIO) ReadMsg(topic string, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Mux {
+func (q QueueIO) ReadMsg(topic string, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Recipet {
 	onceFunc := func() (string, error) {
 		session := q.GetSession()
 		str, err := session.PopString(topic)
@@ -144,45 +143,30 @@ func (q QueueIO) markTopicReadable(topic string) {
 	q.topics[topic] = struct{}{}
 }
 
-func (q QueueIO) readMsgLoop(onceFunc func() (string, error), dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Mux {
+func (q QueueIO) readMsgLoop(onceFunc func() (string, error), dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Recipet {
 	if onceFunc == nil {
 		panic("null read func")
 	}
 	if dataCh == nil {
 		panic("dataCh should not be nil")
 	}
-	mux := &Mux{done: make(chan struct{}, 1), wg: new(sync.WaitGroup)}
-	mux.wg.Add(1)
-	loop := func() {
-		// loop interval duration
-		defaultInterval := 1 * time.Second
-		if len(readIntervals) > 0 {
-			defaultInterval = readIntervals[0]
-		}
-
-		for {
-			var period time.Duration
-			str, err := onceFunc()
-			if err != nil {
-				if errCh != nil && err != redis.ErrNil {
-					errCh <- err
-				}
-				period = defaultInterval
-			} else {
-				dataCh <- str
-				period = 0 * time.Second
+	// loop interval duration
+	defaultInterval := 1 * time.Second
+	if len(readIntervals) > 0 {
+		defaultInterval = readIntervals[0]
+	}
+	work := func(ctx *redo.RedoCtx) {
+		str, err := onceFunc()
+		if err != nil {
+			if errCh != nil && err != redis.ErrNil {
+				errCh <- err
 			}
-			select {
-			case <-time.After(period):
-			case <-mux.done:
-				close(mux.done)
-				mux.wg.Done()
-				return
-			}
+		} else {
+			dataCh <- str
+			ctx.StartNextRightNow()
 		}
 	}
-	go loop()
-	return mux
+	return &Recipet{rep: redo.PerformSafe(work, defaultInterval)}
 }
 
 func queueKey(namespace, topic string) string {

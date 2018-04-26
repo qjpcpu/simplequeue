@@ -26,7 +26,7 @@ func (t TimeScore) ToScore() uint64 {
 }
 
 // timed  queue shortcut
-func (q QueueIO) ReadTimedMsg(topic string, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Mux {
+func (q QueueIO) ReadTimedMsg(topic string, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Recipet {
 	return q.ReadDelayMsg(topic, TimeScore{}, dataCh, errCh, readIntervals...)
 }
 
