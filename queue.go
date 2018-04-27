@@ -21,15 +21,6 @@ type QueueSession struct {
 	Conn redis.Conn
 }
 
-type Recipet struct {
-	rep *redo.Recipet
-}
-
-func (r *Recipet) Close() {
-	r.rep.Stop()
-	r.rep.Wait()
-}
-
 func NewQueueIOByPool(pool *redis.Pool) QueueIO {
 	return QueueIO{redis_pool: pool, topics: make(map[string]struct{})}
 }
@@ -110,7 +101,7 @@ func (s *QueueSession) SendJSON(topic string, payload interface{}) error {
 	return AddJSON(s.Conn, queueKey(ns_norm, topic), payload)
 }
 
-func (q QueueIO) ReadDelayMsg(topic string, getter QueueScoreGetter, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Recipet {
+func (q QueueIO) ReadDelayMsg(topic string, getter QueueScoreGetter, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *redo.Recipet {
 	onceFunc := func() (string, error) {
 		if r := recover(); r != nil {
 			if errCh != nil {
@@ -125,7 +116,7 @@ func (q QueueIO) ReadDelayMsg(topic string, getter QueueScoreGetter, dataCh chan
 	return q.readMsgLoop(onceFunc, dataCh, errCh, readIntervals...)
 }
 
-func (q QueueIO) ReadMsg(topic string, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Recipet {
+func (q QueueIO) ReadMsg(topic string, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *redo.Recipet {
 	onceFunc := func() (string, error) {
 		session := q.GetSession()
 		str, err := session.PopString(topic)
@@ -143,7 +134,7 @@ func (q QueueIO) markTopicReadable(topic string) {
 	q.topics[topic] = struct{}{}
 }
 
-func (q QueueIO) readMsgLoop(onceFunc func() (string, error), dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Recipet {
+func (q QueueIO) readMsgLoop(onceFunc func() (string, error), dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *redo.Recipet {
 	if onceFunc == nil {
 		panic("null read func")
 	}
@@ -166,7 +157,7 @@ func (q QueueIO) readMsgLoop(onceFunc func() (string, error), dataCh chan<- stri
 			ctx.StartNextRightNow()
 		}
 	}
-	return &Recipet{rep: redo.PerformSafe(work, defaultInterval)}
+	return redo.PerformSafe(work, defaultInterval)
 }
 
 func queueKey(namespace, topic string) string {

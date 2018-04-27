@@ -1,6 +1,7 @@
 package qio
 
 import (
+	"github.com/qjpcpu/common/redo"
 	"time"
 )
 
@@ -26,7 +27,7 @@ func (t TimeScore) ToScore() uint64 {
 }
 
 // timed  queue shortcut
-func (q QueueIO) ReadTimedMsg(topic string, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *Recipet {
+func (q QueueIO) ReadTimedMsg(topic string, dataCh chan<- string, errCh chan<- error, readIntervals ...time.Duration) *redo.Recipet {
 	return q.ReadDelayMsg(topic, TimeScore{}, dataCh, errCh, readIntervals...)
 }
 
